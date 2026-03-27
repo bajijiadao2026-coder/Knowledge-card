@@ -1,20 +1,25 @@
+import logging
 from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks, Query
 from sqlalchemy.orm import Session
 
-from app.core.database import get_db
+from app.core.database import get_db, SessionLocal
 from app.models.card import KnowledgeCard
 from app.schemas.card import CardCreate, CardUpdate, CardOut, CardList
 from app.services.coze import extract_transcript
 from app.services.analyzer import analyze_transcript
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def process_card(card_id: int, url: str, db: Session):
-    card = db.query(KnowledgeCard).filter(KnowledgeCard.id == card_id).first()
-    if not card:
-        return
+async def process_card(card_id: int, url: str):
+    """后台任务：调用 Coze 提取文案 → Kimi 分析 → 更新数据库"""
+    db = SessionLocal()
     try:
+        card = db.query(KnowledgeCard).filter(KnowledgeCard.id == card_id).first()
+        if not card:
+            return
+
         coze_result = await extract_transcript(url)
         transcript = coze_result.get("raw_response", "")
 
@@ -28,10 +33,15 @@ async def process_card(card_id: int, url: str, db: Session):
         card.reusable_structure = analysis.get("reusable_structure")
         card.tags = analysis.get("tags")
         card.status = "done"
-    except Exception as e:
-        card.status = "failed"
-    finally:
         db.commit()
+    except Exception as e:
+        logger.error(f"处理卡片 {card_id} 失败: {e}")
+        card = db.query(KnowledgeCard).filter(KnowledgeCard.id == card_id).first()
+        if card:
+            card.status = "failed"
+            db.commit()
+    finally:
+        db.close()
 
 
 @router.post("", response_model=CardOut, status_code=202)
@@ -48,7 +58,7 @@ async def create_card(
     db.add(card)
     db.commit()
     db.refresh(card)
-    background_tasks.add_task(process_card, card.id, body.url, db)
+    background_tasks.add_task(process_card, card.id, body.url)
     return card
 
 
