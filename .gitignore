@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+*.db
+*.sqlite3
+
+# 环境变量（绝对不能提交）
+.env
+backend/.env
+
+# Node
+node_modules/
+.next/
+dist/
+.vercel/
+
+# IDE
+.DS_Store
+.idea/
+.vscode/settings.json
+*.swp
+
+# 日志
+*.log
