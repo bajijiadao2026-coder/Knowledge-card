@@ -3,8 +3,7 @@ from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
     coze_api_token: str = ""
-    coze_bot_id: str = ""
-    coze_api_base: str = "https://api.coze.cn"
+    coze_workflow_id: str = ""
 
     kimi_api_key: str = ""
     claude_api_key: str = ""
