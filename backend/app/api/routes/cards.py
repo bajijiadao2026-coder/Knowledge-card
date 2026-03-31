@@ -13,17 +13,26 @@ router = APIRouter()
 
 
 async def process_card(card_id: int, url: str):
-    """后台任务：调用 Coze 提取文案 → Kimi 分析 → 更新数据库"""
+    """后台任务：调用 Coze 提取文案 → 千问分析 → 更新数据库"""
     db = SessionLocal()
     try:
         card = db.query(KnowledgeCard).filter(KnowledgeCard.id == card_id).first()
         if not card:
             return
 
+        logger.info(f"▶️  开始处理卡片 #{card_id}")
+
+        # Step 1: 扣子工作流提取文案
+        logger.info(f"📡 Step 1 / 2：调用扣子工作流提取文案...")
         coze_result = await extract_transcript(url)
         transcript = coze_result.get("raw_response", "")
+        is_mock = coze_result.get("mock", False)
+        logger.info(f"   文案提取{'（mock）' if is_mock else ''}完成，共 {len(transcript)} 字")
 
+        # Step 2: 千问分析
+        logger.info(f"🤖 Step 2 / 2：调用千问分析文案...")
         analysis = await analyze_transcript(transcript)
+        logger.info(f"   分析完成，建议标题：「{analysis.get('suggested_title', '?')}」")
 
         card.transcript = transcript
         card.title = analysis.get("suggested_title", "未命名卡片")
@@ -34,8 +43,10 @@ async def process_card(card_id: int, url: str):
         card.tags = analysis.get("tags")
         card.status = "done"
         db.commit()
+        logger.info(f"🎉 卡片 #{card_id}「{card.title}」处理完成并已保存")
+
     except Exception as e:
-        logger.error(f"处理卡片 {card_id} 失败: {e}")
+        logger.error(f"❌ 卡片 #{card_id} 处理失败: {e}")
         card = db.query(KnowledgeCard).filter(KnowledgeCard.id == card_id).first()
         if card:
             card.status = "failed"

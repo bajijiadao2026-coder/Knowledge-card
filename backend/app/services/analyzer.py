@@ -1,6 +1,12 @@
 import json
+import logging
 import httpx
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
+
+QWEN_API_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions"
+QWEN_MODEL   = "qwen-plus"
 
 ANALYSIS_PROMPT = """你是一个短视频文案分析专家。请分析以下抖音短视频文案，并严格以JSON格式返回，不要有任何多余文字或markdown标记：
 
@@ -36,18 +42,21 @@ _MOCK_ANALYSIS = {
 
 async def analyze_transcript(transcript: str) -> dict:
     """
-    调用 Kimi API 对文案进行结构化分析。
-    未配置 KIMI_API_KEY 时返回 mock 分析结果。
+    调用阿里千问 API（DashScope OpenAI 兼容接口）对文案进行结构化分析。
+    未配置 QWEN_API_KEY 时返回 mock 分析结果。
     """
-    if not settings.kimi_api_key:
+    if not settings.qwen_api_key:
+        logger.warning("⚠️  QWEN_API_KEY 未配置，使用 mock 分析数据")
         return _MOCK_ANALYSIS
 
+    logger.info(f"🤖 [千问] 开始分析文案（长度 {len(transcript)} 字）...")
+
     headers = {
-        "Authorization": f"Bearer {settings.kimi_api_key}",
+        "Authorization": f"Bearer {settings.qwen_api_key}",
         "Content-Type": "application/json",
     }
     payload = {
-        "model": "moonshot-v1-8k",
+        "model": QWEN_MODEL,
         "messages": [
             {
                 "role": "user",
@@ -58,18 +67,17 @@ async def analyze_transcript(transcript: str) -> dict:
     }
 
     async with httpx.AsyncClient(timeout=60) as client:
-        resp = await client.post(
-            "https://api.moonshot.cn/v1/chat/completions",
-            json=payload,
-            headers=headers,
-        )
+        resp = await client.post(QWEN_API_URL, json=payload, headers=headers)
         resp.raise_for_status()
         data = resp.json()
 
     raw = data["choices"][0]["message"]["content"].strip()
     raw = raw.removeprefix("```json").removeprefix("```").removesuffix("```").strip()
 
+    logger.info("✅ [千问] 分析完成")
+
     try:
         return json.loads(raw)
     except json.JSONDecodeError:
+        logger.warning(f"⚠️  [千问] JSON 解析失败，原始返回：{raw[:200]}")
         return {"suggested_title": "分析结果", "raw_analysis": raw}

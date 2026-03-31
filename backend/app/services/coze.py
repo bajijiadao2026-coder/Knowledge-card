@@ -1,6 +1,9 @@
 import json
+import logging
 import httpx
 from app.core.config import settings
+
+logger = logging.getLogger(__name__)
 
 COZE_WORKFLOW_URL = "https://api.coze.cn/v1/workflow/stream_run"
 
@@ -29,7 +32,11 @@ async def extract_transcript(video_url: str) -> dict:
     未配置凭据时返回 mock 数据。
     """
     if not settings.coze_api_token or not settings.coze_workflow_id:
+        logger.warning("⚠️  COZE_API_TOKEN 或 COZE_WORKFLOW_ID 未配置，使用 mock 文案数据")
         return {"raw_response": _MOCK_TRANSCRIPT, "mock": True}
+
+    logger.info(f"🚀 [扣子] 开始调用工作流，视频链接: {video_url}")
+    logger.info(f"   Workflow ID : {settings.coze_workflow_id}")
 
     headers = {
         "Authorization": f"Bearer {settings.coze_api_token}",
@@ -49,6 +56,7 @@ async def extract_transcript(video_url: str) -> dict:
             headers=headers,
             json=payload,
         ) as resp:
+            logger.info(f"   HTTP 状态码: {resp.status_code}")
             resp.raise_for_status()
 
             async for raw_line in resp.aiter_lines():
@@ -65,10 +73,16 @@ async def extract_transcript(video_url: str) -> dict:
                 except json.JSONDecodeError:
                     continue
 
-                # 工作流输出节点的内容
                 content = data.get("content") or data.get("output") or ""
                 if content:
                     parts.append(str(content))
+                    logger.info(f"   📦 收到数据片段（{len(str(content))} 字）")
 
     transcript = "\n".join(parts).strip()
+
+    if transcript:
+        logger.info(f"✅ [扣子] 工作流调用成功，提取文案 {len(transcript)} 字")
+    else:
+        logger.warning("⚠️  [扣子] 工作流返回为空，请检查工作流输出节点")
+
     return {"raw_response": transcript, "mock": False}
